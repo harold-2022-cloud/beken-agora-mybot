@@ -1,0 +1,322 @@
+diff --git a/ap/components/lwip_intf_v2_1/Kconfig b/ap/components/lwip_intf_v2_1/Kconfig
+index 52ac2d83d..3840fdbad 100755
+--- a/ap/components/lwip_intf_v2_1/Kconfig
++++ b/ap/components/lwip_intf_v2_1/Kconfig
+@@ -97,6 +97,14 @@ menu "Lwip_intf_v2_1"
+ 			bool "Enable DHCP"
+ 			default y
+ 
++		config BK_DHCPD_CAPTIVE_DNS
++			bool "Enable DHCP server captive DNS"
++			default n
++			help
++				When enabled, the AP DHCP DNS helper answers DNS A queries with
++				the AP gateway address. This is intended for product-owned captive
++				portal provisioning. Leave disabled for normal AP behavior.
++
+ 		config DHCP_ONGOING_OPTIM
+ 			bool "Enable DHCP_ONGOING_OPTIM"
+ 			default n
+diff --git a/ap/components/lwip_intf_v2_1/dhcpd/dhcp-server.c b/ap/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
+index 334d521a7..85b7d8e83 100755
+--- a/ap/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
++++ b/ap/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
+@@ -16,6 +16,7 @@
+ 
+ #define DEFAULT_DHCP_ADDRESS_TIMEOUT	(60U*60U*1U) /* 1 hour */
+ #define CLIENT_IP_NOT_FOUND              0x00000000
++#define ERROR_REFUSED 5
+ 
+ uint32_t dhcp_address_timeout = DEFAULT_DHCP_ADDRESS_TIMEOUT;
+ static beken_mutex_t dhcpd_mutex;
+@@ -235,6 +236,16 @@ static unsigned int make_response(char *msg, enum dhcp_message_type type)
+ 	opt->length = 4;
+ 	offset += sizeof(struct bootp_option) + opt->length;
+ 
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	LWIP_LOGI("[DHCP_DNS_DIAG] response_type=%d ap_param=%p disable_dns_server=%u dns_handler=%p nameserver_option=%u router=0x%08x\r\n",
++		  type,
++		  g_ap_param_ptr,
++		  g_ap_param_ptr ? g_ap_param_ptr->disable_dns_server : 255,
++		  dhcp_nack_dns_server_handler,
++		  (g_ap_param_ptr && !g_ap_param_ptr->disable_dns_server) ? 1 : 0,
++		  dhcps.router_ip);
++#endif
++
+ 	if (g_ap_param_ptr && !g_ap_param_ptr->disable_dns_server) {
+ 		opt = (struct bootp_option *)offset;
+ 		opt->type = BOOTP_OPTION_NAMESERVER;
+@@ -294,11 +305,37 @@ static int send_response(int sock, struct sockaddr *addr, char *msg, int len)
+ 	return 0;
+ }
+ 
+-#define ERROR_REFUSED 5
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++static char *dns_skip_qname(char *p, char *endp)
++{
++	while (p < endp) {
++		uint8_t label_len = (uint8_t)*p++;
++
++		if (label_len == 0)
++			return p;
++		if ((label_len & 0xC0) != 0 || p + label_len > endp)
++			return NULL;
++		p += label_len;
++	}
++
++	return NULL;
++}
++#endif
++
+ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ {
+ 	struct dns_header *hdr;
+ 	char *endp = msg + len;
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	char *qend;
++	struct dns_question *question;
++	struct dns_rr *answer;
++	uint16_t qtype;
++	uint16_t qclass;
++	uint16_t flags;
++	static uint32_t query_count;
++	int send_len;
++#endif
+ 	int nq;
+ 
+ 	if (len < sizeof(struct dns_header)) {
+@@ -323,6 +360,61 @@ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ 		return -1;
+ 	}
+ 
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	qend = dns_skip_qname(msg + sizeof(struct dns_header), endp);
++	if (!qend || qend + sizeof(struct dns_question) > endp) {
++		dhcp_e("ignoring malformed dns question\r\n");
++		return -1;
++	}
++
++	question = (struct dns_question *)qend;
++	qtype = ntohs(question->type);
++	qclass = ntohs(question->class);
++	send_len = qend + sizeof(struct dns_question) - msg;
++
++	hdr->flags.fields.qr = 1;
++	hdr->flags.fields.opcode = 0;
++	hdr->flags.fields.aa = 1;
++	hdr->flags.fields.tc = 0;
++	hdr->flags.fields.rd = 1;
++	hdr->flags.fields.ra = 0;
++	hdr->flags.fields.rcode = 0;
++	flags = hdr->flags.num;
++	hdr->flags.num = htons(hdr->flags.num);
++	hdr->num_questions  = htons(0x01);
++
++	if (qtype == 1 && qclass == 1 && send_len + sizeof(struct dns_rr) <= SERVER_BUFFER_SIZE) {
++		answer = (struct dns_rr *)(msg + send_len);
++		answer->name_ptr = htons(0xC00C);
++		answer->type = htons(0x01);
++		answer->class = htons(0x01);
++		answer->ttl = htonl(30);
++		answer->rdlength = htons(0x04);
++		answer->rd = dhcps.router_ip;
++		hdr->answer_rrs = htons(0x01);
++		send_len += sizeof(struct dns_rr);
++	} else {
++		hdr->answer_rrs = 0;
++	}
++
++	hdr->authority_rrs = 0;
++	hdr->additional_rrs = 0;
++	SEND_RESPONSE(dhcps.dnssock, (struct sockaddr *)fromaddr,
++		      msg, send_len);
++
++	query_count++;
++	if (query_count <= 8 || (query_count % 32) == 0) {
++		LWIP_LOGI("[CAPTIVE_DNS_BUILTIN] query=%u qtype=%u qclass=%u answer_rrs=%u answer=0x%08x flags=0x%04x\r\n",
++			  (unsigned)query_count,
++			  (unsigned)qtype,
++			  (unsigned)qclass,
++			  (unsigned)ntohs(hdr->answer_rrs),
++			  (unsigned)dhcps.router_ip,
++			  (unsigned)flags);
++	}
++
++	return 0;
++#else
+ 	/* make the header represent a response */
+ 	hdr->flags.fields.qr = 1;
+ 	hdr->flags.fields.opcode = 0;
+@@ -343,6 +435,7 @@ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ 		      msg, endp - msg);
+ 
+ 	return -1;
++#endif
+ }
+ 
+ static int process_dhcp_message(char *msg, int len)
+diff --git a/cp/components/lwip_intf_v2_1/Kconfig b/cp/components/lwip_intf_v2_1/Kconfig
+index 770390e63..5646fb2e5 100755
+--- a/cp/components/lwip_intf_v2_1/Kconfig
++++ b/cp/components/lwip_intf_v2_1/Kconfig
+@@ -81,6 +81,14 @@ menu "Lwip_intf_v2_1"
+ 			bool "Enable DHCP"
+ 			default y
+ 
++		config BK_DHCPD_CAPTIVE_DNS
++			bool "Enable DHCP server captive DNS"
++			default n
++			help
++				When enabled, the AP DHCP DNS helper answers DNS A queries with
++				the AP gateway address. This is intended for product-owned captive
++				portal provisioning. Leave disabled for normal AP behavior.
++
+ 		config DHCP_ONGOING_OPTIM
+ 			bool "Enable DHCP_ONGOING_OPTIM"
+ 			default n
+diff --git a/cp/components/lwip_intf_v2_1/dhcpd/dhcp-server.c b/cp/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
+index f99073ffb..85b7d8e83 100755
+--- a/cp/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
++++ b/cp/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
+@@ -16,6 +16,7 @@
+ 
+ #define DEFAULT_DHCP_ADDRESS_TIMEOUT	(60U*60U*1U) /* 1 hour */
+ #define CLIENT_IP_NOT_FOUND              0x00000000
++#define ERROR_REFUSED 5
+ 
+ uint32_t dhcp_address_timeout = DEFAULT_DHCP_ADDRESS_TIMEOUT;
+ static beken_mutex_t dhcpd_mutex;
+@@ -235,6 +236,16 @@ static unsigned int make_response(char *msg, enum dhcp_message_type type)
+ 	opt->length = 4;
+ 	offset += sizeof(struct bootp_option) + opt->length;
+ 
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	LWIP_LOGI("[DHCP_DNS_DIAG] response_type=%d ap_param=%p disable_dns_server=%u dns_handler=%p nameserver_option=%u router=0x%08x\r\n",
++		  type,
++		  g_ap_param_ptr,
++		  g_ap_param_ptr ? g_ap_param_ptr->disable_dns_server : 255,
++		  dhcp_nack_dns_server_handler,
++		  (g_ap_param_ptr && !g_ap_param_ptr->disable_dns_server) ? 1 : 0,
++		  dhcps.router_ip);
++#endif
++
+ 	if (g_ap_param_ptr && !g_ap_param_ptr->disable_dns_server) {
+ 		opt = (struct bootp_option *)offset;
+ 		opt->type = BOOTP_OPTION_NAMESERVER;
+@@ -253,7 +264,6 @@ static unsigned int make_response(char *msg, enum dhcp_message_type type)
+ 		opt->length = 4;
+ 		offset += sizeof(struct bootp_option) + opt->length;
+ 	}
+-
+ 	opt = (struct bootp_option *)offset;
+ 	opt->type = BOOTP_END_OPTION;
+ 	offset++;
+@@ -295,11 +305,37 @@ static int send_response(int sock, struct sockaddr *addr, char *msg, int len)
+ 	return 0;
+ }
+ 
+-#define ERROR_REFUSED 5
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++static char *dns_skip_qname(char *p, char *endp)
++{
++	while (p < endp) {
++		uint8_t label_len = (uint8_t)*p++;
++
++		if (label_len == 0)
++			return p;
++		if ((label_len & 0xC0) != 0 || p + label_len > endp)
++			return NULL;
++		p += label_len;
++	}
++
++	return NULL;
++}
++#endif
++
+ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ {
+ 	struct dns_header *hdr;
+ 	char *endp = msg + len;
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	char *qend;
++	struct dns_question *question;
++	struct dns_rr *answer;
++	uint16_t qtype;
++	uint16_t qclass;
++	uint16_t flags;
++	static uint32_t query_count;
++	int send_len;
++#endif
+ 	int nq;
+ 
+ 	if (len < sizeof(struct dns_header)) {
+@@ -324,6 +360,61 @@ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ 		return -1;
+ 	}
+ 
++#if CONFIG_BK_DHCPD_CAPTIVE_DNS
++	qend = dns_skip_qname(msg + sizeof(struct dns_header), endp);
++	if (!qend || qend + sizeof(struct dns_question) > endp) {
++		dhcp_e("ignoring malformed dns question\r\n");
++		return -1;
++	}
++
++	question = (struct dns_question *)qend;
++	qtype = ntohs(question->type);
++	qclass = ntohs(question->class);
++	send_len = qend + sizeof(struct dns_question) - msg;
++
++	hdr->flags.fields.qr = 1;
++	hdr->flags.fields.opcode = 0;
++	hdr->flags.fields.aa = 1;
++	hdr->flags.fields.tc = 0;
++	hdr->flags.fields.rd = 1;
++	hdr->flags.fields.ra = 0;
++	hdr->flags.fields.rcode = 0;
++	flags = hdr->flags.num;
++	hdr->flags.num = htons(hdr->flags.num);
++	hdr->num_questions  = htons(0x01);
++
++	if (qtype == 1 && qclass == 1 && send_len + sizeof(struct dns_rr) <= SERVER_BUFFER_SIZE) {
++		answer = (struct dns_rr *)(msg + send_len);
++		answer->name_ptr = htons(0xC00C);
++		answer->type = htons(0x01);
++		answer->class = htons(0x01);
++		answer->ttl = htonl(30);
++		answer->rdlength = htons(0x04);
++		answer->rd = dhcps.router_ip;
++		hdr->answer_rrs = htons(0x01);
++		send_len += sizeof(struct dns_rr);
++	} else {
++		hdr->answer_rrs = 0;
++	}
++
++	hdr->authority_rrs = 0;
++	hdr->additional_rrs = 0;
++	SEND_RESPONSE(dhcps.dnssock, (struct sockaddr *)fromaddr,
++		      msg, send_len);
++
++	query_count++;
++	if (query_count <= 8 || (query_count % 32) == 0) {
++		LWIP_LOGI("[CAPTIVE_DNS_BUILTIN] query=%u qtype=%u qclass=%u answer_rrs=%u answer=0x%08x flags=0x%04x\r\n",
++			  (unsigned)query_count,
++			  (unsigned)qtype,
++			  (unsigned)qclass,
++			  (unsigned)ntohs(hdr->answer_rrs),
++			  (unsigned)dhcps.router_ip,
++			  (unsigned)flags);
++	}
++
++	return 0;
++#else
+ 	/* make the header represent a response */
+ 	hdr->flags.fields.qr = 1;
+ 	hdr->flags.fields.opcode = 0;
+@@ -344,6 +435,7 @@ static int process_dns_message(char *msg, int len, struct sockaddr_in *fromaddr)
+ 		      msg, endp - msg);
+ 
+ 	return -1;
++#endif
+ }
+ 
+ static int process_dhcp_message(char *msg, int len)

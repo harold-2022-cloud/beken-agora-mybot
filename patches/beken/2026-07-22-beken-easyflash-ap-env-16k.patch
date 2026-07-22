@@ -1,0 +1,13 @@
+diff --git a/ap/components/easy_flash/easy_flash_V4.X/inc/ef_cfg.h b/ap/components/easy_flash/easy_flash_V4.X/inc/ef_cfg.h
+index 624803ad1..b823f7126 100755
+--- a/ap/components/easy_flash/easy_flash_V4.X/inc/ef_cfg.h
++++ b/ap/components/easy_flash/easy_flash_V4.X/inc/ef_cfg.h
+@@ -86,7 +86,7 @@ extern uint32_t g_ef_start_addr;
+ #define EF_START_ADDR     (g_ef_start_addr)
+ 
+ /* ENV area size. It's at least one empty sector for GC. So it's definition must more then or equal 2 flash sector size. */
+-#define ENV_AREA_SIZE     (2 * EF_ERASE_MIN_SIZE)      /* 8K */
++#define ENV_AREA_SIZE     (4 * EF_ERASE_MIN_SIZE)      /* 16K */
+ 
+ /* saved log area size */
+ #define LOG_AREA_SIZE             (254 * EF_ERASE_MIN_SIZE)      /* 1016K */

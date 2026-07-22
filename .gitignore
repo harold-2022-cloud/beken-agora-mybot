@@ -1,0 +1,15 @@
+build/
+**/build/
+*.bin
+*.rbl
+*.elf
+*.map
+*.nm
+*.log
+log.txt
+__pycache__/
+*.pyc
+*.swp
+*.tmp
+.DS_Store
+
