@@ -214,7 +214,7 @@ int App_Rtc_Facade_Bridge_On_Token_Result_With_User_Account(const char *rtc_toke
     result.app_id = app_id;
     result.uid = uid;
     result.user_account = (user_account != NULL && user_account[0] != '\0') ? user_account : NULL;
-    result.enable_audio_ai_qos = true;
+    result.enable_audio_ai_qos = false;
 
     ENTITY_LOGI("[RTC_FACADE] token result options ai_qos=%d user_account=%s\r\n",
                 result.enable_audio_ai_qos ? 1 : 0,

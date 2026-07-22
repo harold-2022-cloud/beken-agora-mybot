@@ -8,6 +8,12 @@ This repository contains one product project:
 
 The repository intentionally excludes supplier-specific products such as R1 LCD/AVI and SpeedTech NFC/4G board code.
 
+## Documents
+
+- Install/build manual: [English](docs/INSTALL_BUILD_EN.md) / [中文](docs/INSTALL_BUILD_CN.md)
+- Porting/debug manual: [English](docs/PORTING_AND_DEBUG_EN.md) / [中文](docs/PORTING_AND_DEBUG_CN.md)
+- Public release scope: [English](docs/public-release-scope.md) / [中文](docs/PUBLIC_RELEASE_SCOPE_CN.md)
+
 ## Repository Layout
 
 ```text
@@ -19,61 +25,18 @@ projects/beken_agent_http/   # BK7258 application project
 tools/                       # patch/build helpers
 ```
 
-## Clone
+## Quick Start
 
 ```bash
-git clone --recurse-submodules <this-repo-url>
+git clone --recurse-submodules https://github.com/harold-2022-cloud/beken-agora-mybot.git
 cd beken-agora-mybot
-```
-
-If submodules were not cloned:
-
-```bash
-git submodule update --init --recursive
-```
-
-## Apply Beken SDK Patches
-
-The Beken SDK is kept as an official submodule. Product-required SDK changes are stored as patches.
-
-```bash
-tools/apply_beken_patches.sh
-```
-
-Current patch:
-
-- `patches/beken/2026-07-22-beken-easyflash-ap-env-16k.patch`
-- `patches/beken/2026-07-22-beken-dhcpd-captive-dns-config.patch`
-
-The EasyFlash patch expands AP ENV from 8K to 16K so Wi-Fi config and `http_device_token` can be persisted reliably.
-
-The DHCP/DNS patch adds `CONFIG_BK_DHCPD_CAPTIVE_DNS`, default off. `beken_agent_http` enables it so captive portal DNS can answer A records with `192.168.4.1`.
-
-## Build
-
-Toolchain default:
-
-```text
-/opt/gcc-arm-none-eabi-10.3-2021.10/bin
-```
-
-Build:
-
-```bash
 tools/build_beken_agent_http.sh --clean
 ```
 
-Build and copy to the Windows burn tool directory:
+Copy firmware to the Windows burn tool folder:
 
 ```bash
-tools/build_beken_agent_http.sh --clean --copy-to /mnt/c/Users/harold.chen/Desktop/bk-burn-tool/BEKEN_BKFIL_V3.0.1.4_314_20240924
-```
-
-Output files:
-
-```text
-projects/beken_agent_http/build/bk7258/beken_agent_http/package/all-app.bin
-projects/beken_agent_http/build/bk7258/beken_agent_http/package/app_pack.rbl
+tools/build_beken_agent_http.sh --clean --copy-to /path/to/beken-burn-tool
 ```
 
 ## Runtime Flow
@@ -89,21 +52,14 @@ projects/beken_agent_http/build/bk7258/beken_agent_http/package/app_pack.rbl
 9. AI button starts `/devices/{device_id}/conversations/start`.
 10. RTC token result is passed to `ai_iot_sdk` RTC facade.
 
-## Public Configuration Notes
+## Default Policy
 
-`projects/beken_agent_http/ap/entity_iot_process.h` contains placeholder MQTT product/triple values. MQTT is disabled by default for this HTTP POC:
-
-```text
-# CONFIG_HTTP_AGENT_ENABLE_MQTT is not set
-```
-
-Replace placeholders only if you explicitly enable MQTT management.
-
-The HTTP Device API default endpoint is in:
-
-```text
-projects/beken_agent_http/ap/device_api_client.c
-```
+- MQTT is disabled by default: `# CONFIG_HTTP_AGENT_ENABLE_MQTT is not set`.
+- BLE provisioning is disabled by default: `# CONFIG_HTTP_AGENT_ENABLE_BLE_PROVISIONING is not set`.
+- BK video engine/DVP camera is disabled by default: `# CONFIG_BK_VIDEO_ENGINE is not set`.
+- RTC audio AIQOS is disabled in the product HTTP request and RTC token option.
+- Product code owns Wi-Fi provisioning, HTTP binding, button policy, audio peripheral parameters, and optional AVI/LCD behavior.
+- `ai_iot_sdk` owns RTC audio/video/datastream/private RTM backend and Agora vendor integration.
 
 ## Validation
 
@@ -119,4 +75,6 @@ Captive DNS after flashing:
 nslookup neverssl.com 192.168.4.1
 ```
 
-Expected result: the A record resolves to `192.168.4.1`, not `Query refused`.
+Expected result: the A record resolves to `192.168.4.1`.
+
+See the install/build manual and porting/debug manual above for full clone, build, burn, integration, and troubleshooting guidance.

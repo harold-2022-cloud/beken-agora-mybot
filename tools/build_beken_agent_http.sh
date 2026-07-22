@@ -9,11 +9,12 @@ TOOLCHAIN_DIR="${COMPILER_TOOLCHAIN_PATH:-/opt/gcc-arm-none-eabi-10.3-2021.10/bi
 TARGET="bk7258"
 CLEAN=0
 COPY_TO=""
+APPLY_PATCHES=1
 MAKE_ARGS=()
 
 usage() {
     cat <<USAGE
-Usage: $(basename "$0") [--clean] [--copy-to DIR] [make-args...]
+Usage: $(basename "$0") [--clean] [--no-apply-patches] [--copy-to DIR] [make-args...]
 
 Build beken_agent_http for BK7258.
 
@@ -24,7 +25,8 @@ Environment:
 Examples:
   tools/apply_beken_patches.sh
   tools/build_beken_agent_http.sh --clean
-  tools/build_beken_agent_http.sh --clean --copy-to /mnt/c/Users/harold.chen/Desktop/bk-burn-tool/BEKEN_BKFIL_V3.0.1.4_314_20240924
+  tools/build_beken_agent_http.sh --clean --copy-to /path/to/beken-burn-tool
+  tools/build_beken_agent_http.sh --clean --no-apply-patches
 USAGE
 }
 
@@ -41,6 +43,10 @@ while (($# > 0)); do
                 exit 1
             fi
             shift 2
+            ;;
+        --no-apply-patches)
+            APPLY_PATCHES=0
+            shift
             ;;
         -h|--help)
             usage
@@ -76,6 +82,10 @@ echo "SDK_DIR=${SDK_DIR}"
 echo "COMPILER_TOOLCHAIN_PATH=${COMPILER_TOOLCHAIN_PATH}"
 echo "TARGET=${TARGET}"
 
+if [[ "${APPLY_PATCHES}" -eq 1 ]]; then
+    SDK_DIR="${SDK_DIR}" "${REPO_ROOT}/tools/apply_beken_patches.sh"
+fi
+
 if [[ "${CLEAN}" -eq 1 ]]; then
     rm -rf "${PROJECT_DIR}/build"
 fi
@@ -93,4 +103,3 @@ if [[ -n "${COPY_TO}" ]]; then
     echo "copied: ${COPY_TO}/beken_agent_http_mybot_all-app.bin"
     echo "copied: ${COPY_TO}/beken_agent_http_mybot_app_pack.rbl"
 fi
-

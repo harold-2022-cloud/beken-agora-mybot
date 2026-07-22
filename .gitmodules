@@ -1,9 +1,8 @@
 [submodule "ai_iot_sdk"]
 	path = ai_iot_sdk
-	url = git@github.com:harold-2022-cloud/ai_iot_sdk.git
+	url = https://github.com/harold-2022-cloud/ai_iot_sdk.git
 	branch = main
 [submodule "bk_avdk_smp"]
 	path = bk_avdk_smp
 	url = https://github.com/bekencorp/bk_avdk_smp.git
 	branch = release/v3.1.1
-

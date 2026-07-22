@@ -1189,7 +1189,7 @@ int Device_Api_Conversation_Start(Device_Api_Conversation_Start_Result_t *out)
     ret = snprintf(body,
                    sizeof(body),
                    "{\"trigger\":\"button\","
-                   "\"features\":{\"ai_qos\":true,"
+                   "\"features\":{\"ai_qos\":false,"
                    "\"fast_send_multiplier\":3,\"show_transcript\":true},"
                    "\"firmware_version\":\"bk7258-w20-poc\"}");
     if (ret < 0 || (size_t)ret >= sizeof(body))
