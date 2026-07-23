@@ -8,6 +8,7 @@
 #endif
 #include "bsp_wifi.h"
 #include "bsp_flash.h"
+#include "bk_dual_screen_avi_player.h"
 #include "os/os.h"
 
 #include <stdbool.h>
@@ -882,6 +883,7 @@ static int Device_Api_Request_Pair_Code(Device_Api_Pair_Code_Result_t *out)
                 s_device_id,
                 out->expires_in_seconds,
                 out->poll_after_seconds);
+    (void)bk_pair_code_display_show(out->code);
     Device_Api_Notify_Pair_Code_Ble(out);
     return 0;
 }
@@ -977,6 +979,7 @@ int Device_Api_Clear_Device_Token(void)
     s_device_token_loaded = false;
     s_pending_pair_valid = false;
     memset(&s_pending_pair, 0, sizeof(s_pending_pair));
+    (void)bk_pair_code_display_clear();
 
     ENTITY_LOGI("[HTTP_DEVICE_API] clear device_token ret=%d\r\n", ret);
     return ret;
@@ -1125,6 +1128,7 @@ int Device_Api_Binding_Run(void)
             (void)Device_Api_Save_Device_Token();
             s_pending_pair_valid = false;
             memset(&s_pending_pair, 0, sizeof(s_pending_pair));
+            (void)bk_pair_code_display_clear();
             return 0;
         }
 

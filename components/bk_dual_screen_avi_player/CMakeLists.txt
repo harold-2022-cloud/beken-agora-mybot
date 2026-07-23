@@ -4,6 +4,7 @@ set(srcs "")
 if (CONFIG_DUAL_SCREEN_AVI_PLAYER)
 list(APPEND srcs
     bk_dual_screen_avi_player.c
+    bk_pair_code_display.c
     bk_ota_display.c
 )
 endif()

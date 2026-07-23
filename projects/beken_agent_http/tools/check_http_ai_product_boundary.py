@@ -16,6 +16,9 @@ PERIPH_INTERFACE = ROOT / "ap" / "entity_interface" / "entity_periph_import_inte
 BSP_WIFI = ROOT / "ap" / "entity_port" / "bsp_wifi_bk7258.c"
 HTTP_WIFI_PROV_C = ROOT / "ap" / "http_wifi_provision_server.c"
 HTTP_WIFI_PROV_H = ROOT / "ap" / "http_wifi_provision_server.h"
+PAIR_CODE_DISPLAY_C = ROOT.parents[1] / "components" / "bk_dual_screen_avi_player" / "bk_pair_code_display.c"
+DUAL_SCREEN_H = ROOT.parents[1] / "components" / "bk_dual_screen_avi_player" / "bk_dual_screen_avi_player.h"
+DUAL_SCREEN_CMAKE = ROOT.parents[1] / "components" / "bk_dual_screen_avi_player" / "CMakeLists.txt"
 EASYFLASH_CFG = ROOT.parents[1] / "bk_avdk_smp" / "ap" / "components" / "easy_flash" / "easy_flash_V4.X" / "inc" / "ef_cfg.h"
 DHCP_SERVER_AP = ROOT.parents[1] / "bk_avdk_smp" / "ap" / "components" / "lwip_intf_v2_1" / "dhcpd" / "dhcp-server.c"
 DHCP_SERVER_CP = ROOT.parents[1] / "bk_avdk_smp" / "cp" / "components" / "lwip_intf_v2_1" / "dhcpd" / "dhcp-server.c"
@@ -38,6 +41,9 @@ periph_interface_text = PERIPH_INTERFACE.read_text(encoding="utf-8")
 bsp_wifi_text = BSP_WIFI.read_text(encoding="utf-8")
 http_wifi_prov_c_text = HTTP_WIFI_PROV_C.read_text(encoding="utf-8") if HTTP_WIFI_PROV_C.exists() else ""
 http_wifi_prov_h_text = HTTP_WIFI_PROV_H.read_text(encoding="utf-8") if HTTP_WIFI_PROV_H.exists() else ""
+pair_code_display_text = PAIR_CODE_DISPLAY_C.read_text(encoding="utf-8") if PAIR_CODE_DISPLAY_C.exists() else ""
+dual_screen_h_text = DUAL_SCREEN_H.read_text(encoding="utf-8") if DUAL_SCREEN_H.exists() else ""
+dual_screen_cmake_text = DUAL_SCREEN_CMAKE.read_text(encoding="utf-8") if DUAL_SCREEN_CMAKE.exists() else ""
 easyflash_cfg_text = EASYFLASH_CFG.read_text(encoding="utf-8")
 dhcp_server_ap_text = DHCP_SERVER_AP.read_text(encoding="utf-8")
 dhcp_server_cp_text = DHCP_SERVER_CP.read_text(encoding="utf-8")
@@ -68,6 +74,17 @@ required = {
     "PAIR_CODE=": device_api_text,
     "binding pending PAIR_CODE=": device_api_text,
     "Device_Api_Notify_Pair_Code_Ble": device_api_text,
+    "bk_pair_code_display_show(out->code)": device_api_text,
+    "bk_pair_code_display_clear()": device_api_text,
+    "bk_pair_code_display.c": dual_screen_cmake_text,
+    "bk_pair_code_display_show": pair_code_display_text + "\n" + dual_screen_h_text,
+    "bk_pair_code_display_clear": pair_code_display_text + "\n" + dual_screen_h_text,
+    "static const uint8_t s_digit_5x7": pair_code_display_text,
+    "PAIR_CODE_DISPLAY_WIDTH": pair_code_display_text,
+    "PAIR_CODE_DISPLAY_HEIGHT": pair_code_display_text,
+    "#define PAIR_CODE_DIGIT_SCALE 8": pair_code_display_text,
+    "bk_dual_screen_avi_player_stop()": pair_code_display_text,
+    "bk_display_flush": pair_code_display_text,
     "Entity_Ble_V1_Send_Packet_By_Notify": device_api_text,
     "\"pair_code\"": device_api_text,
     "\"expires_in\"": device_api_text,
@@ -180,6 +197,9 @@ for forbidden in [
 ]:
     if forbidden in device_api_text:
         raise SystemExit(f"HTTP device API is still a shell: {forbidden}")
+
+if "lvgl" in pair_code_display_text.lower():
+    raise SystemExit("pair-code display must not enable or include LVGL")
 
 if "pair_token=%s" in device_api_text or "pair_token=%.*s" in device_api_text:
     raise SystemExit("pair_token must not be printed in logs")
