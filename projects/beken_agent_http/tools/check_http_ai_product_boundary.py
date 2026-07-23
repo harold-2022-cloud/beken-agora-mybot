@@ -215,6 +215,16 @@ if "Product_Http_Binding_Request_Cancel()" not in send_func:
 if "s_config_net_pending_need_clear" not in send_func:
     raise SystemExit("CONFIG_NETWORK enqueue path must preserve pending config-net when queue is full")
 
+config_network_cases = process_text.split("case CONFIG_NETWORK:")
+if len(config_network_cases) < 3:
+    raise SystemExit("expected key and external CONFIG_NETWORK handlers")
+for idx, case_tail in enumerate(config_network_cases[1:], start=1):
+    case_body = case_tail.split("break;", 1)[0]
+    prompt_pos = case_body.find("app_event_send_msg(APP_EVT_NETWORK_PROVISIONING")
+    enqueue_pos = case_body.find("Entity_Product_Work_Send(ENTITY_PRODUCT_WORK_CONFIG_NET")
+    if prompt_pos < 0 or enqueue_pos < 0 or prompt_pos > enqueue_pos:
+        raise SystemExit(f"CONFIG_NETWORK handler {idx} must play provisioning prompt before entering AP web provisioning")
+
 try:
     binding_start_func = process_text.split("static int Product_Http_Binding_Start(void)\n{", 1)[1].split("static void Product_Config_Net_Run", 1)[0]
 except IndexError as exc:

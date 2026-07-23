@@ -552,6 +552,7 @@ static void App_Key_Event_Process(uint8_t event)
 
         case CONFIG_NETWORK:
         {
+            app_event_send_msg(APP_EVT_NETWORK_PROVISIONING, 0);
             Entity_Product_Work_Send(ENTITY_PRODUCT_WORK_CONFIG_NET, 1);
             break;
         }
@@ -590,6 +591,7 @@ static void App_Key_Extern_Event_Process(uint8_t event)
     {
         case CONFIG_NETWORK://设备重置，重新配网
         {
+            app_event_send_msg(APP_EVT_NETWORK_PROVISIONING, 0);
             Entity_Product_Work_Send(ENTITY_PRODUCT_WORK_CONFIG_NET, 1);
             break;
         }
