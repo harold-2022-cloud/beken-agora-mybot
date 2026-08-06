@@ -44,7 +44,8 @@ http_wifi_prov_h_text = HTTP_WIFI_PROV_H.read_text(encoding="utf-8") if HTTP_WIF
 pair_code_display_text = PAIR_CODE_DISPLAY_C.read_text(encoding="utf-8") if PAIR_CODE_DISPLAY_C.exists() else ""
 dual_screen_h_text = DUAL_SCREEN_H.read_text(encoding="utf-8") if DUAL_SCREEN_H.exists() else ""
 dual_screen_cmake_text = DUAL_SCREEN_CMAKE.read_text(encoding="utf-8") if DUAL_SCREEN_CMAKE.exists() else ""
-easyflash_cfg_text = EASYFLASH_CFG.read_text(encoding="utf-8")
+easyflash_cfg_actual_text = EASYFLASH_CFG.read_text(encoding="utf-8")
+easyflash_cfg_text = easyflash_cfg_actual_text
 dhcp_server_ap_text = DHCP_SERVER_AP.read_text(encoding="utf-8")
 dhcp_server_cp_text = DHCP_SERVER_CP.read_text(encoding="utf-8")
 lwip_kconfig_ap_text = LWIP_KCONFIG_AP.read_text(encoding="utf-8")
@@ -143,7 +144,7 @@ required = {
     "\\\"phase\\\":\\\"wifi_connecting\\\"": http_wifi_prov_c_text,
     "Bsp_Flash_Reset_Env_To_Default": bsp_flash_h_text + "\n" + bsp_flash_c_text + "\n" + http_wifi_prov_c_text,
     "ef_env_set_default": bsp_flash_c_text,
-    "ENV_AREA_SIZE     (4 * EF_ERASE_MIN_SIZE)": easyflash_cfg_text,
+    "ENV_AREA_SIZE     (4 * EF_ERASE_MIN_SIZE)": easyflash_cfg_actual_text,
     "[HTTP_WIFI_PROV][EF_ENV]": http_wifi_prov_c_text,
     "ENV_AREA_SIZE": http_wifi_prov_c_text,
     "sizeof(Entity_Dev_Config_Net_Info_t)": http_wifi_prov_c_text,
@@ -182,6 +183,9 @@ required = {
 for needle, haystack in required.items():
     if needle not in haystack:
         raise SystemExit(f"missing required HTTP AI boundary marker: {needle}")
+
+if "ENV_AREA_SIZE     (4 * EF_ERASE_MIN_SIZE)" not in easyflash_cfg_actual_text:
+    raise SystemExit("actual Beken AP EasyFlash ENV_AREA_SIZE must be 16K, not only present in patches/beken")
 
 for forbidden in [
     "Entity_Device_Access_Export_Interface();",
@@ -224,6 +228,34 @@ if "Entity_Set_Dev_Status(DEV_WIFI_CONNECTED_STATE)" not in bsp_wifi_text:
 
 if "if (Product_Http_Ai_Start() == 0)" not in start_case:
     raise SystemExit("AI start must only launch AVI/player after HTTP RTC start succeeds")
+
+try:
+    binding_func = process_text.split("static int Product_Http_Binding_Start(void)\n{", 1)[1].split("static void Product_Config_Net_Run", 1)[0]
+except IndexError as exc:
+    raise SystemExit("missing Product_Http_Binding_Start") from exc
+
+if "Product_Http_Persist_Binding_State()" not in binding_func:
+    raise SystemExit("HTTP binding success must persist SDK config_net_data binding state")
+
+persist_pos = binding_func.find("Product_Http_Persist_Binding_State()")
+done_pos = binding_func.find("s_http_binding_done = 1")
+stop_pos = binding_func.find("Http_Wifi_Provision_Server_Stop")
+if not (0 <= persist_pos < done_pos < stop_pos):
+    raise SystemExit("HTTP binding state must persist before marking binding done and stopping AP provisioning")
+
+try:
+    binding_persist_func = process_text.split("static int Product_Http_Persist_Binding_State(void)\n{", 1)[1].split("static int Product_Http_Binding_Start", 1)[0]
+except IndexError as exc:
+    raise SystemExit("missing Product_Http_Persist_Binding_State") from exc
+
+for needle in [
+    "dev_config->Flag_Bind = 1",
+    "dev_config->Flag_Wifi_Info_Vaild = 1",
+    "dev_config->Bind_Type = WIFI_BIND_TYPE",
+    "Entity_Save_Config_Net_Info_To_Flash()",
+]:
+    if needle not in binding_persist_func:
+        raise SystemExit(f"HTTP binding persistence missing: {needle}")
 
 try:
     send_func = process_text.split("static int Entity_Product_Work_Send", 1)[1].split("static void Entity_Product_Worker_Task", 1)[0]

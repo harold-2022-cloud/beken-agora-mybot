@@ -3,6 +3,7 @@
 #include "bsp_flash.h"
 #include "bsp_wifi.h"
 #include "cJSON.h"
+#include "components/system.h"
 #include "device_api_client.h"
 #include "entity_dev_info.h"
 #include "entity_iot_cloud.h"
@@ -217,10 +218,14 @@ static void http_wifi_prov_build_ap_ssid(char *ssid, size_t ssid_len)
 {
     uint8_t mac[6] = {0};
 
-    Bsp_Wifi_Get_Macaddr(mac);
+    if (bk_get_mac(mac, MAC_TYPE_BLUETOOTH) != BK_OK)
+    {
+        ENTITY_LOGW("[HTTP_WIFI_PROV] BT MAC unavailable; use zero suffix for AP SSID\r\n");
+    }
+
     snprintf(ssid,
              ssid_len,
-             "AG-BK-%02X%02X%02X",
+             "R1-%02X%02X%02X",
              mac[3],
              mac[4],
              mac[5]);

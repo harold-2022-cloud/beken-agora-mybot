@@ -4,6 +4,7 @@
 #include "entity_interface.h"
 
 #include "entity_log.h"
+#include "entity_dev_info.h"
 #include "entity_iot_func.h"
 #include "entity_iot_cloud.h"
 #include "entity_os_system.h"
@@ -92,6 +93,7 @@ static void Product_Http_Ai_Stop(void);
 static void Product_Config_Net_Run(uint32_t need_clear);
 static void Product_Http_Binding_Reset(void);
 static void Product_Http_Binding_Request_Cancel(void);
+static int Product_Http_Persist_Binding_State(void);
 static int Product_Http_Binding_Start(void);
 
 
@@ -718,6 +720,13 @@ static int Product_Http_Binding_Start(void)
 
     if (ret == 0)
     {
+        ret = Product_Http_Persist_Binding_State();
+        if (ret != 0)
+        {
+            ENTITY_LOGE("[PRODUCT_WORK] HTTP device binding accepted but persist failed ret=%d\r\n", ret);
+            return ret;
+        }
+
         s_http_binding_done = 1;
         ENTITY_LOGI("[PRODUCT_WORK] HTTP device binding accepted\r\n");
         Http_Wifi_Provision_Server_Stop();
@@ -726,6 +735,34 @@ static int Product_Http_Binding_Start(void)
 
     ENTITY_LOGW("[PRODUCT_WORK] HTTP device binding failed ret=%d\r\n", ret);
     return ret;
+}
+
+static int Product_Http_Persist_Binding_State(void)
+{
+    Entity_Dev_Config_Net_Info_t *dev_config = Entity_Get_Dev_Config_Net_Info();
+    int ret = 0;
+
+    if (dev_config == NULL)
+    {
+        ENTITY_LOGE("[PRODUCT_WORK] HTTP binding persist failed: dev_config NULL\r\n");
+        return -1;
+    }
+
+    dev_config->Flag_Bind = 1;
+    dev_config->Flag_Wifi_Info_Vaild = 1;
+    dev_config->Bind_Type = WIFI_BIND_TYPE;
+    ret = Entity_Save_Config_Net_Info_To_Flash();
+    if (ret != 0)
+    {
+        ENTITY_LOGE("[PRODUCT_WORK] HTTP binding persist config_net_data failed ret=%d\r\n", ret);
+        return ret;
+    }
+
+    ENTITY_LOGI("[PRODUCT_WORK] HTTP binding persisted Flag_Bind=%u Bind_Type=%u Flag_Wifi_Info_Vaild=%u\r\n",
+                dev_config->Flag_Bind,
+                dev_config->Bind_Type,
+                dev_config->Flag_Wifi_Info_Vaild);
+    return 0;
 }
 
 static void Product_Config_Net_Run(uint32_t need_clear)
