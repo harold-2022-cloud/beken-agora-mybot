@@ -34,6 +34,7 @@ set(priv_req
     bk_countdown
     bk_dual_screen_avi_player
     bk_vfs
+    bk_uid
 )
 
 if (CONFIG_HTTP_AGENT_ENABLE_BLE_PROVISIONING)
@@ -54,3 +55,25 @@ list(APPEND priv_req
 )
 
 armino_component_register(SRCS "${srcs}" INCLUDE_DIRS "${incs}" PRIV_REQUIRES "${priv_req}")
+
+set(device_api_region "$ENV{DEVICE_API_REGION}")
+if(device_api_region STREQUAL "")
+    set(device_api_region "global")
+endif()
+string(TOLOWER "${device_api_region}" device_api_region)
+
+if(device_api_region STREQUAL "cn")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        DEVICE_API_DEFAULT_BASE_URL=DEVICE_API_BASE_URL_PROD_CN
+        DEVICE_API_BUILD_REGION=\"cn\"
+    )
+elseif(device_api_region STREQUAL "global")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        DEVICE_API_DEFAULT_BASE_URL=DEVICE_API_BASE_URL_PROD_GLOBAL
+        DEVICE_API_BUILD_REGION=\"global\"
+    )
+else()
+    message(FATAL_ERROR "Unsupported DEVICE_API_REGION=${device_api_region}; expected cn or global")
+endif()
+
+message(STATUS "DEVICE_API_REGION=${device_api_region}")

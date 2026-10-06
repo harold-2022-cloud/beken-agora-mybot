@@ -18,8 +18,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DEVICE_API_BASE_URL_PROD_CN "http://mybot.sh2.agoralab.co/api"
+#define DEVICE_API_BASE_URL_PROD_GLOBAL "http://mybot.sg3.agoralab.co/api"
+
 #ifndef DEVICE_API_DEFAULT_BASE_URL
-#define DEVICE_API_DEFAULT_BASE_URL "http://mybot.sg3.agoralab.co/api"
+#define DEVICE_API_DEFAULT_BASE_URL DEVICE_API_BASE_URL_PROD_GLOBAL
+#endif
+#ifndef DEVICE_API_BUILD_REGION
+#define DEVICE_API_BUILD_REGION "global"
 #endif
 #ifndef DEVICE_API_DEFAULT_DEVICE_ID
 #define DEVICE_API_DEFAULT_DEVICE_ID "AG-BK7258-POC"
@@ -66,6 +72,37 @@ typedef struct
 static Device_Api_Pair_Code_Result_t s_pending_pair;
 static bool s_pending_pair_valid;
 static volatile bool s_binding_cancel_requested;
+
+static size_t Device_Api_Strnlen(const char *value, size_t max_len)
+{
+    size_t len = 0;
+
+    if (value == NULL)
+    {
+        return 0;
+    }
+
+    while (len < max_len && value[len] != '\0')
+    {
+        len++;
+    }
+
+    return len;
+}
+
+static uint32_t Device_Api_Hash_String(const char *value, size_t max_len)
+{
+    size_t len = Device_Api_Strnlen(value, max_len);
+    uint32_t hash = 2166136261u;
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        hash ^= (uint8_t)value[i];
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
 
 static void Device_Api_Notify_Pair_Code_Ble(const Device_Api_Pair_Code_Result_t *pair)
 {
@@ -184,8 +221,9 @@ static int Device_Api_Load_Device_Token(void)
         return -1;
     }
 
-    ENTITY_LOGI("[HTTP_DEVICE_API] loaded device_token len=%u\r\n",
-                (unsigned)strlen(s_device_token));
+    ENTITY_LOGI("[HTTP_DEVICE_API][TOKEN_LOAD] len=%u hash=0x%08X\r\n",
+                (unsigned)Device_Api_Strnlen(s_device_token, sizeof(s_device_token)),
+                (unsigned)Device_Api_Hash_String(s_device_token, sizeof(s_device_token)));
     return 0;
 }
 
@@ -207,8 +245,9 @@ static int Device_Api_Save_Device_Token(void)
         return ret;
     }
 
-    ENTITY_LOGI("[HTTP_DEVICE_API] device_token saved len=%u\r\n",
-                (unsigned)strlen(s_device_token));
+    ENTITY_LOGI("[HTTP_DEVICE_API][TOKEN_SAVE] len=%u hash=0x%08X\r\n",
+                (unsigned)Device_Api_Strnlen(s_device_token, sizeof(s_device_token)),
+                (unsigned)Device_Api_Hash_String(s_device_token, sizeof(s_device_token)));
     return 0;
 }
 
@@ -818,7 +857,8 @@ void Device_Api_Client_Init(const char *base_url,
     Device_Api_Ensure_Device_Id();
     (void)Device_Api_Load_Device_Token();
 
-    ENTITY_LOGI("[HTTP_DEVICE_API] init base=%s device=%s token_len=%u\r\n",
+    ENTITY_LOGI("[HTTP_DEVICE_API] init region=%s base=%s device=%s token_len=%u\r\n",
+                DEVICE_API_BUILD_REGION,
                 s_base_url,
                 s_device_id,
                 (unsigned)strlen(s_device_token));
@@ -973,6 +1013,8 @@ int Device_Api_Binding_Begin(void)
 
 int Device_Api_Clear_Device_Token(void)
 {
+    size_t token_len = Device_Api_Strnlen(s_device_token, sizeof(s_device_token));
+    uint32_t token_hash = Device_Api_Hash_String(s_device_token, sizeof(s_device_token));
     int ret = Bsp_Flash_Delete_Key(DEVICE_API_DEVICE_TOKEN_KEY);
 
     memset(s_device_token, 0, sizeof(s_device_token));
@@ -981,7 +1023,10 @@ int Device_Api_Clear_Device_Token(void)
     memset(&s_pending_pair, 0, sizeof(s_pending_pair));
     (void)bk_pair_code_display_clear();
 
-    ENTITY_LOGI("[HTTP_DEVICE_API] clear device_token ret=%d\r\n", ret);
+    ENTITY_LOGI("[HTTP_DEVICE_API][TOKEN_CLEAR] old_len=%u old_hash=0x%08X ret=%d\r\n",
+                (unsigned)token_len,
+                (unsigned)token_hash,
+                ret);
     return ret;
 }
 
@@ -1116,6 +1161,8 @@ int Device_Api_Binding_Run(void)
 
         if (strcmp(status.status, "bound") == 0)
         {
+            int save_ret = 0;
+
             if (status.device_token[0] == '\0')
             {
                 ENTITY_LOGE("[HTTP_DEVICE_API] binding bound but missing device_token\r\n");
@@ -1123,9 +1170,17 @@ int Device_Api_Binding_Run(void)
             }
 
             snprintf(s_device_token, sizeof(s_device_token), "%s", status.device_token);
-            ENTITY_LOGI("[HTTP_DEVICE_API] device bound token_len=%u\r\n",
-                        (unsigned)strlen(s_device_token));
-            (void)Device_Api_Save_Device_Token();
+            ENTITY_LOGI("[HTTP_DEVICE_API][TOKEN_BOUND] len=%u hash=0x%08X\r\n",
+                        (unsigned)Device_Api_Strnlen(s_device_token, sizeof(s_device_token)),
+                        (unsigned)Device_Api_Hash_String(s_device_token, sizeof(s_device_token)));
+            save_ret = Device_Api_Save_Device_Token();
+            if (save_ret != 0)
+            {
+                ENTITY_LOGE("[HTTP_DEVICE_API] device bound but token persist failed ret=%d\r\n", save_ret);
+                s_device_token[0] = '\0';
+                s_device_token_loaded = false;
+                return -24;
+            }
             s_pending_pair_valid = false;
             memset(&s_pending_pair, 0, sizeof(s_pending_pair));
             (void)bk_pair_code_display_clear();

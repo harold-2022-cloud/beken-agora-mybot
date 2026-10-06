@@ -1284,7 +1284,7 @@ CONFIG_APP_EVT=y
 #
 # countdown
 #
-CONFIG_COUNTDOWN=y
+# CONFIG_COUNTDOWN is not set
 # end of countdown
 
 #

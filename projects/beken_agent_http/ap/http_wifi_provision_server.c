@@ -4,6 +4,7 @@
 #include "bsp_wifi.h"
 #include "cJSON.h"
 #include "components/system.h"
+#include <components/bk_uid.h>
 #include "device_api_client.h"
 #include "entity_dev_info.h"
 #include "entity_iot_cloud.h"
@@ -214,9 +215,67 @@ static size_t json_append_escaped(char *out, size_t out_len, size_t offset, cons
     return offset;
 }
 
+static size_t http_wifi_prov_strnlen(const char *value, size_t max_len)
+{
+    size_t len = 0;
+
+    if (value == NULL)
+    {
+        return 0;
+    }
+
+    while (len < max_len && value[len] != '\0')
+    {
+        len++;
+    }
+
+    return len;
+}
+
+static uint32_t http_wifi_prov_hash_string(const char *value, size_t max_len)
+{
+    size_t len = http_wifi_prov_strnlen(value, max_len);
+    uint32_t hash = 2166136261u;
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        hash ^= (uint8_t)value[i];
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
+
 static void http_wifi_prov_build_ap_ssid(char *ssid, size_t ssid_len)
 {
+    unsigned char uid[32] = {0};
     uint8_t mac[6] = {0};
+    uint32_t uid_hash = 2166136261u;
+    bool uid_any_non_zero = false;
+    bool uid_any_not_ff = false;
+
+    if (bk_uid_get_data(uid) == BK_OK)
+    {
+        for (size_t i = 0; i < sizeof(uid); ++i)
+        {
+            uid_any_non_zero = uid_any_non_zero || (uid[i] != 0x00);
+            uid_any_not_ff = uid_any_not_ff || (uid[i] != 0xff);
+            uid_hash ^= uid[i];
+            uid_hash *= 16777619u;
+        }
+
+        if (uid_any_non_zero && uid_any_not_ff)
+        {
+            snprintf(ssid, ssid_len, "R1-%06X", (unsigned int)(uid_hash & 0xFFFFFFu));
+            return;
+        }
+
+        ENTITY_LOGW("[HTTP_WIFI_PROV] chip UID invalid; fallback to BT MAC suffix for AP SSID\r\n");
+    }
+    else
+    {
+        ENTITY_LOGW("[HTTP_WIFI_PROV] chip UID unavailable; fallback to BT MAC suffix for AP SSID\r\n");
+    }
 
     if (bk_get_mac(mac, MAC_TYPE_BLUETOOTH) != BK_OK)
     {
@@ -278,7 +337,21 @@ static int http_wifi_prov_save_wifi(const char *ssid, const char *password)
     memset(config->Wifi_Info.Key, 0, sizeof(config->Wifi_Info.Key));
     strncpy(config->Wifi_Info.Ssid, ssid, sizeof(config->Wifi_Info.Ssid) - 1);
     strncpy(config->Wifi_Info.Key, password ? password : "", sizeof(config->Wifi_Info.Key) - 1);
+    dev_config->Magic_Header = MAGIC_HEADER_VALUE;
+    dev_config->Flag_Bind = 0;
+    dev_config->Flag_Wifi_Info_Vaild = 0;
     dev_config->Bind_Type = WIFI_BIND_TYPE;
+
+    ENTITY_LOGI("[HTTP_WIFI_PROV][CFG_WRITE] magic=0x%08X flag_bind=%u bind_type=%u wifi_valid=%u ssid_len=%u ssid_hash=0x%08X pwd_len=%u pwd_hash=0x%08X\r\n",
+                (unsigned)dev_config->Magic_Header,
+                dev_config->Flag_Bind,
+                dev_config->Bind_Type,
+                dev_config->Flag_Wifi_Info_Vaild,
+                (unsigned)http_wifi_prov_strnlen(config->Wifi_Info.Ssid, sizeof(config->Wifi_Info.Ssid)),
+                (unsigned)http_wifi_prov_hash_string(config->Wifi_Info.Ssid, sizeof(config->Wifi_Info.Ssid)),
+                (unsigned)http_wifi_prov_strnlen(config->Wifi_Info.Key, sizeof(config->Wifi_Info.Key)),
+                (unsigned)http_wifi_prov_hash_string(config->Wifi_Info.Key, sizeof(config->Wifi_Info.Key)));
+
     return Entity_Save_Config_Net_Info_To_Flash();
 }
 

@@ -77,7 +77,7 @@ static int Entity_Flash_Save_Config_Net_Info(unsigned char *pdata, unsigned int 
 
 static int Entity_Flash_Read_Config_Net_Info(unsigned char *pdata, unsigned int len)
 {
-    return Bsp_Flash_Read_Key_Value(CONFIG_NET_DATA_KEY, pdata, len);
+    return Bsp_Flash_Read_Key_Value_Exact(CONFIG_NET_DATA_KEY, pdata, len);
 }
 
 static int Entity_Flash_Save_Thing_Model_Info(unsigned char *pdata, unsigned int len)

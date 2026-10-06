@@ -93,6 +93,7 @@ static void Product_Http_Ai_Stop(void);
 static void Product_Config_Net_Run(uint32_t need_clear);
 static void Product_Http_Binding_Reset(void);
 static void Product_Http_Binding_Request_Cancel(void);
+static int Product_Http_Persist_Wifi_Valid_State(void);
 static int Product_Http_Persist_Binding_State(void);
 static int Product_Http_Binding_Start(void);
 
@@ -632,6 +633,7 @@ void App_Dev_Status_Callback(unsigned char status)
             break;
         case DEV_WIFI_CONNECTED_STATE://WIFI获取IP成功
             app_event_send_msg(APP_EVT_RECONNECT_NETWORK_SUCCESS, 0);
+            (void)Product_Http_Persist_Wifi_Valid_State();
             Http_Wifi_Provision_Server_On_Sta_Connected();
             Entity_Product_Work_Send(ENTITY_PRODUCT_WORK_HTTP_BIND, 0);
             //bk_sconf_trans_start();
@@ -735,6 +737,44 @@ static int Product_Http_Binding_Start(void)
 
     ENTITY_LOGW("[PRODUCT_WORK] HTTP device binding failed ret=%d\r\n", ret);
     return ret;
+}
+
+static int Product_Http_Persist_Wifi_Valid_State(void)
+{
+    Entity_Dev_Config_Net_Info_t *dev_config = Entity_Get_Dev_Config_Net_Info();
+    int ret = 0;
+
+    if (dev_config == NULL)
+    {
+        ENTITY_LOGE("[PRODUCT_WORK] Wi-Fi valid persist failed: dev_config NULL\r\n");
+        return -1;
+    }
+
+    if (dev_config->Config_Net_Info.Wifi_Info.Ssid[0] == '\0')
+    {
+        ENTITY_LOGW("[PRODUCT_WORK] Wi-Fi valid persist skipped: empty ssid\r\n");
+        return -2;
+    }
+
+    if (dev_config->Flag_Wifi_Info_Vaild && dev_config->Bind_Type == WIFI_BIND_TYPE)
+    {
+        return 0;
+    }
+
+    dev_config->Flag_Wifi_Info_Vaild = 1;
+    dev_config->Bind_Type = WIFI_BIND_TYPE;
+    ret = Entity_Save_Config_Net_Info_To_Flash();
+    if (ret != 0)
+    {
+        ENTITY_LOGE("[PRODUCT_WORK] Wi-Fi valid persist config_net_data failed ret=%d\r\n", ret);
+        return ret;
+    }
+
+    ENTITY_LOGI("[PRODUCT_WORK] Wi-Fi valid persisted Bind_Type=%u Flag_Wifi_Info_Vaild=%u ssid=%s\r\n",
+                dev_config->Bind_Type,
+                dev_config->Flag_Wifi_Info_Vaild,
+                dev_config->Config_Net_Info.Wifi_Info.Ssid);
+    return 0;
 }
 
 static int Product_Http_Persist_Binding_State(void)

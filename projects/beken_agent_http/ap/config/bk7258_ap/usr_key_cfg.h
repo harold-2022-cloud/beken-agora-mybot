@@ -24,7 +24,7 @@ extern "C" {
         .long_event = SHUT_DOWN \
     }, \
     { \
-        .gpio_id = GPIO_46, \
+        .gpio_id = GPIO_8, \
         .active_level = LOW_LEVEL_TRIGGER, \
         .short_event = VOLUME_DOWN, \
         .double_event = VOLUME_DOWN \

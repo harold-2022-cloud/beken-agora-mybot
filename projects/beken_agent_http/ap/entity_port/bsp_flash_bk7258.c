@@ -71,6 +71,35 @@ int Bsp_Flash_Read_Key_Value(const char *key, unsigned char *pdata, unsigned int
     return ret;
 }
 
+int Bsp_Flash_Read_Key_Value_Exact(const char *key, unsigned char *pdata, unsigned int len)
+{
+    size_t saved_len = 0;
+    size_t read_len = 0;
+
+    if (key == NULL || pdata == NULL || len == 0)
+    {
+        return -1;
+    }
+
+    memset(pdata, 0, len);
+    read_len = ef_get_env_blob(key, pdata, len, &saved_len);
+    if (read_len != len || saved_len != len)
+    {
+        ENTITY_LOGW("Bsp_Flash_Read_Key_Value_Exact mismatch key=%s read=%u saved=%u expect=%u\r\n",
+                    key,
+                    (unsigned)read_len,
+                    (unsigned)saved_len,
+                    len);
+        memset(pdata, 0, len);
+        return -2;
+    }
+
+    ENTITY_LOGI("Bsp_Flash_Read_Key_Value_Exact ok key=%s len=%u\r\n",
+                key,
+                len);
+    return (int)read_len;
+}
+
 int Bsp_Flash_Delete_Key(const char *key)
 {
     int ret = ef_del_env(key);

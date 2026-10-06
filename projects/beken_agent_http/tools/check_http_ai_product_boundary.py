@@ -14,6 +14,7 @@ AP_KCONFIG = ROOT / "ap" / "Kconfig.projbuild"
 ENTITY_INTERFACE = ROOT / "ap" / "entity_interface" / "entity_interface.c"
 PERIPH_INTERFACE = ROOT / "ap" / "entity_interface" / "entity_periph_import_interface.c"
 BSP_WIFI = ROOT / "ap" / "entity_port" / "bsp_wifi_bk7258.c"
+ENTITY_DEV_INFO = SDK / "entity_iot_sdk" / "entity_app" / "entity_dev_info.c"
 HTTP_WIFI_PROV_C = ROOT / "ap" / "http_wifi_provision_server.c"
 HTTP_WIFI_PROV_H = ROOT / "ap" / "http_wifi_provision_server.h"
 PAIR_CODE_DISPLAY_C = ROOT.parents[1] / "components" / "bk_dual_screen_avi_player" / "bk_pair_code_display.c"
@@ -26,6 +27,7 @@ LWIP_KCONFIG_AP = ROOT.parents[1] / "bk_avdk_smp" / "ap" / "components" / "lwip_
 LWIP_KCONFIG_CP = ROOT.parents[1] / "bk_avdk_smp" / "cp" / "components" / "lwip_intf_v2_1" / "Kconfig"
 PRODUCT_AP_CONFIG = ROOT / "ap" / "config" / "bk7258_ap" / "config"
 PRODUCT_CP_CONFIG = ROOT / "cp" / "config" / "bk7258" / "config"
+USER_KEY_CFG = ROOT / "ap" / "config" / "bk7258_ap" / "usr_key_cfg.h"
 PATCH_DIR = ROOT.parents[1] / "patches" / "beken"
 
 process_text = PROCESS.read_text(encoding="utf-8")
@@ -39,6 +41,7 @@ ap_kconfig_text = AP_KCONFIG.read_text(encoding="utf-8")
 entity_interface_text = ENTITY_INTERFACE.read_text(encoding="utf-8")
 periph_interface_text = PERIPH_INTERFACE.read_text(encoding="utf-8")
 bsp_wifi_text = BSP_WIFI.read_text(encoding="utf-8")
+entity_dev_info_text = ENTITY_DEV_INFO.read_text(encoding="utf-8")
 http_wifi_prov_c_text = HTTP_WIFI_PROV_C.read_text(encoding="utf-8") if HTTP_WIFI_PROV_C.exists() else ""
 http_wifi_prov_h_text = HTTP_WIFI_PROV_H.read_text(encoding="utf-8") if HTTP_WIFI_PROV_H.exists() else ""
 pair_code_display_text = PAIR_CODE_DISPLAY_C.read_text(encoding="utf-8") if PAIR_CODE_DISPLAY_C.exists() else ""
@@ -52,6 +55,7 @@ lwip_kconfig_ap_text = LWIP_KCONFIG_AP.read_text(encoding="utf-8")
 lwip_kconfig_cp_text = LWIP_KCONFIG_CP.read_text(encoding="utf-8")
 product_ap_config_text = PRODUCT_AP_CONFIG.read_text(encoding="utf-8")
 product_cp_config_text = PRODUCT_CP_CONFIG.read_text(encoding="utf-8")
+user_key_cfg_text = USER_KEY_CFG.read_text(encoding="utf-8")
 patches_text = "\n".join(
     patch.read_text(encoding="utf-8") for patch in sorted(PATCH_DIR.glob("*.patch"))
 ) if PATCH_DIR.exists() else ""
@@ -387,5 +391,36 @@ except IndexError as exc:
 
 if "Entity_Product_Work_Send(ENTITY_PRODUCT_WORK_CONFIG_NET, 0)" not in unprovision_case:
     raise SystemExit("DEV_UNPROVISION_STATE must start AP web provisioning without clearing http_device_token")
+
+try:
+    load_dev_info_func = entity_dev_info_text.split("int Entity_Load_Dev_Info", 1)[1].split("return Entity_Dev_State;", 1)[0]
+except IndexError as exc:
+    raise SystemExit("missing Entity_Load_Dev_Info") from exc
+
+if "has_wifi_cred" not in load_dev_info_func or "Wifi_Info.Ssid[0]" not in load_dev_info_func:
+    raise SystemExit("boot state must use saved Wi-Fi credentials, not only Flag_Bind, to start STA")
+if "Flag_Bind" not in load_dev_info_func or "Flag_Wifi_Info_Vaild" not in load_dev_info_func:
+    raise SystemExit("boot state must keep Wi-Fi-valid and cloud-binding state separate")
+
+try:
+    connected_case = process_text.split("case DEV_WIFI_CONNECTED_STATE:", 1)[1].split("break;", 1)[0]
+except IndexError as exc:
+    raise SystemExit("missing DEV_WIFI_CONNECTED_STATE case") from exc
+
+if "Product_Http_Persist_Wifi_Valid_State()" not in connected_case:
+    raise SystemExit("HTTP AP provisioning must persist Flag_Wifi_Info_Vaild when STA gets IP")
+if connected_case.find("Product_Http_Persist_Wifi_Valid_State()") > connected_case.find("ENTITY_PRODUCT_WORK_HTTP_BIND"):
+    raise SystemExit("Wi-Fi valid state must persist before starting HTTP binding")
+
+if "CONFIG_USR_KEY_CFG_EN=y" not in product_ap_config_text:
+    raise SystemExit("AP product config must use the project key table")
+
+try:
+    volume_down_key = user_key_cfg_text.split(".short_event = VOLUME_DOWN", 1)[0].rsplit("{", 1)[1]
+except IndexError as exc:
+    raise SystemExit("missing VOLUME_DOWN key mapping") from exc
+
+if ".gpio_id = GPIO_8" not in volume_down_key:
+    raise SystemExit("Volume Down must be mapped to GPIO_8 for the current board")
 
 print("PASS: beken_agent_http AI start uses HTTP + AP web provisioning boundary")

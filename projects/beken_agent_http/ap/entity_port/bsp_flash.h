@@ -13,6 +13,7 @@ extern "C" {
 
 int Bsp_Flash_Save_Key_Value(const char *key, unsigned char *pdata, unsigned int len);
 int Bsp_Flash_Read_Key_Value(const char *key, unsigned char *pdata, unsigned int len);
+int Bsp_Flash_Read_Key_Value_Exact(const char *key, unsigned char *pdata, unsigned int len);
 int Bsp_Flash_Delete_Key(const char *key);
 int Bsp_Flash_Reset_Env_To_Default(void);
 
